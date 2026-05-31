@@ -1,0 +1,10 @@
+.pytest_cache/
+.uv-cache/
+.venv/
+*.egg-info/
+__pycache__/
+*.py[cod]
+runs/
+
+# macOS
+.DS_Store

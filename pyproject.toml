@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rmc"
+version = "0.1.0"
+description = "Recurrent Memory Core research prototype"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "torch>=2.3",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+]
+text = [
+    "transformers>=4.53,<6",
+]
+
+[project.scripts]
+rmc-train = "rmc.train:main"
+rmc-demo = "rmc.runtime:main"
+rmc-benchmark = "rmc.benchmark:main"
+rmc-probe = "rmc.probe:main"
+rmc-train-text = "rmc.train_text:main"
+rmc-text-chat = "rmc.text_chat:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
