@@ -82,11 +82,14 @@ def run_episode(
 
 
 @torch.no_grad()
-def evaluate(bridge, factory, args, *, device, amp_enabled) -> dict[str, float]:
+def evaluate(bridge, factory, args, *, device, amp_enabled) -> dict[str, float | list[float]]:
     memory_accuracy = 0.0
     core_only_accuracy = 0.0
     memory_answer_accuracy = 0.0
     core_only_answer_accuracy = 0.0
+    channel_correct = [0.0] * args.channels
+    core_only_channel_correct = [0.0] * args.channels
+    channel_total = [0] * args.channels
     for _ in range(args.evaluation_batches):
         batch = factory.sample(
             batch_size=args.batch_size,
@@ -112,11 +115,27 @@ def evaluate(bridge, factory, args, *, device, amp_enabled) -> dict[str, float]:
             core_only_accuracy += core_only_reply.token_accuracy.item()
             memory_answer_accuracy += memory_reply.answer_accuracy.item()
             core_only_answer_accuracy += core_only_reply.answer_accuracy.item()
+            for channel, correct, core_only_correct in zip(
+                batch.question_channels,
+                memory_reply.answer_correct.tolist(),
+                core_only_reply.answer_correct.tolist(),
+                strict=True,
+            ):
+                channel_correct[channel] += float(correct)
+                core_only_channel_correct[channel] += float(core_only_correct)
+                channel_total[channel] += 1
     return {
         "eval_token_accuracy": memory_accuracy / args.evaluation_batches,
         "core_only_token_accuracy": core_only_accuracy / args.evaluation_batches,
         "eval_answer_accuracy": memory_answer_accuracy / args.evaluation_batches,
         "core_only_answer_accuracy": core_only_answer_accuracy / args.evaluation_batches,
+        "eval_channel_answer_accuracy": [
+            correct / max(total, 1) for correct, total in zip(channel_correct, channel_total, strict=True)
+        ],
+        "core_only_channel_answer_accuracy": [
+            correct / max(total, 1)
+            for correct, total in zip(core_only_channel_correct, channel_total, strict=True)
+        ],
     }
 
 
@@ -173,6 +192,7 @@ def main() -> None:
     scaler = torch.amp.GradScaler(device.type, enabled=amp_enabled)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = args.output_dir / "metrics.jsonl"
+    best_answer_accuracy = -1.0
     trainable_parameters = sum(parameter.numel() for parameter in bridge.trainable_parameters())
     print(
         f"device={device} frozen_lm={args.model!r} trainable_params={trainable_parameters:,} "
@@ -250,9 +270,24 @@ def main() -> None:
                 f"evaluation step={step:05d} token_acc={metrics['eval_token_accuracy']:.3f} "
                 f"answer_acc={metrics['eval_answer_accuracy']:.3f} "
                 f"core_only_token_acc={metrics['core_only_token_accuracy']:.3f} "
-                f"core_only_answer_acc={metrics['core_only_answer_accuracy']:.3f}",
+                f"core_only_answer_acc={metrics['core_only_answer_accuracy']:.3f} "
+                f"channel_answer_acc={metrics['eval_channel_answer_accuracy']} "
+                f"core_only_channel_answer_acc={metrics['core_only_channel_answer_accuracy']}",
                 flush=True,
             )
+            if metrics["eval_answer_accuracy"] > best_answer_accuracy:
+                best_answer_accuracy = metrics["eval_answer_accuracy"]
+                save_text_checkpoint(
+                    args.output_dir / "best.pt",
+                    bridge=bridge,
+                    model_name=args.model,
+                    optimizer=optimizer,
+                    step=step,
+                )
+                print(
+                    f"new_best step={step:05d} answer_acc={best_answer_accuracy:.3f}",
+                    flush=True,
+                )
 
 
 if __name__ == "__main__":

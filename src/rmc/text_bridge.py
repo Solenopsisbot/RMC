@@ -28,6 +28,7 @@ class ReplyLoss:
     loss: Tensor
     token_accuracy: Tensor
     answer_accuracy: Tensor
+    answer_correct: Tensor
 
 
 class RecurrentTextBridge(nn.Module):
@@ -186,11 +187,13 @@ class RecurrentTextBridge(nn.Module):
         scored = shifted_labels != -100
         correct = (shifted_logits.argmax(dim=-1) == shifted_labels) & scored
         token_accuracy = correct.sum() / scored.sum().clamp_min(1)
-        answer_accuracy = (correct | ~scored).all(dim=1).float().mean()
+        answer_correct = (correct | ~scored).all(dim=1)
+        answer_accuracy = answer_correct.float().mean()
         return ReplyLoss(
             loss=outputs.loss,
             token_accuracy=token_accuracy,
             answer_accuracy=answer_accuracy,
+            answer_correct=answer_correct,
         )
 
     @torch.inference_mode()

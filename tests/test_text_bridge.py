@@ -120,6 +120,7 @@ def test_text_bridge_observes_messages_and_backpropagates_reply_loss() -> None:
     assert state.steps.tolist() == [1, 1]
     assert 0 <= reply.token_accuracy.item() <= 1
     assert 0 <= reply.answer_accuracy.item() <= 1
+    assert reply.answer_correct.shape == (2,)
     assert bridge.event_projection[1].weight.grad is not None
     assert bridge.prefix_projection[1].weight.grad is not None
     assert all(parameter.grad is None for parameter in bridge.language_model.parameters())

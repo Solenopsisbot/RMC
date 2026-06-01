@@ -63,6 +63,11 @@ zero question, while `1` samples every question channel uniformly. Evaluation
 uses fully random questions by default, even during an intermediate training
 stage.
 
+Evaluation logs include whole-answer accuracy for each question channel and
+write the strongest evaluated adapter to `best.pt`. This makes channel-zero
+shortcuts visible and preserves a useful handoff checkpoint when later updates
+become unstable.
+
 ## Interactive Chat
 
 ```bash
