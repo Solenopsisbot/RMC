@@ -106,9 +106,12 @@ class DiscordMemoryFactory:
         device: torch.device | str,
         channels: int = 3,
         distractors: int = 2,
+        random_question_probability: float = 1.0,
     ) -> TextMemoryBatch:
         if channels < 1:
             raise ValueError("channels must be positive")
+        if not 0.0 <= random_question_probability <= 1.0:
+            raise ValueError("random_question_probability must be between 0 and 1")
         event_rows: list[list[str]] = [[] for _ in range(channels + distractors + 1)]
         channel_rows: list[list[int]] = [[] for _ in event_rows]
         answers: list[str] = []
@@ -128,7 +131,11 @@ class DiscordMemoryFactory:
                     "I was thinking about music and the weather."
                 )
                 channel_rows[channels + offset].append(channels + offset)
-            question_channel = self.random.randrange(channels)
+            question_channel = (
+                self.random.randrange(channels)
+                if self.random.random() < random_question_probability
+                else 0
+            )
             question = "What is my private codename? Reply with only the codename."
             event_rows[-1].append(f"[discord channel {question_channel}] user: {question}")
             channel_rows[-1].append(question_channel)

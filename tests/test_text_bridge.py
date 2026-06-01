@@ -176,3 +176,16 @@ def test_discord_memory_factory_builds_cross_channel_recall_episode() -> None:
     assert batch.event_channel[-1, 0].item() == batch.question_channels[0]
     assert all(0 <= channel < 3 for channel in batch.question_channels)
     assert len(batch.answers) == 3
+
+
+def test_discord_memory_factory_can_mix_in_familiar_channel_zero_queries() -> None:
+    factory = DiscordMemoryFactory(TinyTokenizer(), seed=4)
+    batch = factory.sample(
+        batch_size=8,
+        device="cpu",
+        channels=3,
+        distractors=0,
+        random_question_probability=0.0,
+    )
+
+    assert batch.question_channels == (0,) * 8

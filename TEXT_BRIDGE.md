@@ -57,6 +57,12 @@ evaluation to a full reset. Override that with
 `--reset-optimizer` when carrying adapter weights into a substantially changed
 curriculum without inheriting Adam moments from the earlier task.
 
+Question routing can be ramped independently with
+`--random-question-probability`. A value of `0` asks only the familiar channel
+zero question, while `1` samples every question channel uniformly. Evaluation
+uses fully random questions by default, even during an intermediate training
+stage.
+
 ## Interactive Chat
 
 ```bash

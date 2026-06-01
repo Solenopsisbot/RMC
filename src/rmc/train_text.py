@@ -24,6 +24,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--channels", type=int, default=3)
     parser.add_argument("--distractors", type=int, default=2)
+    parser.add_argument("--random-question-probability", type=float, default=1.0)
+    parser.add_argument("--evaluation-random-question-probability", type=float, default=1.0)
     parser.add_argument("--input-size", type=int, default=256)
     parser.add_argument("--model-size", type=int, default=256)
     parser.add_argument("--memory-slots", type=int, default=64)
@@ -91,6 +93,7 @@ def evaluate(bridge, factory, args, *, device, amp_enabled) -> dict[str, float]:
             device=device,
             channels=args.channels,
             distractors=args.distractors,
+            random_question_probability=args.evaluation_random_question_probability,
         )
         with autocast_context(device, amp_enabled):
             memory_reply = run_episode(
@@ -121,6 +124,10 @@ def main() -> None:
     args = parse_args()
     if args.reset_core_before_query:
         args.core_reset_probability = 1.0
+    if not 0.0 <= args.random_question_probability <= 1.0:
+        raise ValueError("--random-question-probability must be between 0 and 1")
+    if not 0.0 <= args.evaluation_random_question_probability <= 1.0:
+        raise ValueError("--evaluation-random-question-probability must be between 0 and 1")
     if not 0.0 <= args.core_reset_probability <= 1.0:
         raise ValueError("--core-reset-probability must be between 0 and 1")
     if args.evaluation_core_reset_probability is None:
@@ -170,7 +177,9 @@ def main() -> None:
     print(
         f"device={device} frozen_lm={args.model!r} trainable_params={trainable_parameters:,} "
         f"amp={amp_enabled} core_reset_probability={args.core_reset_probability:.2f} "
-        f"evaluation_core_reset_probability={args.evaluation_core_reset_probability:.2f}",
+        f"evaluation_core_reset_probability={args.evaluation_core_reset_probability:.2f} "
+        f"random_question_probability={args.random_question_probability:.2f} "
+        f"evaluation_random_question_probability={args.evaluation_random_question_probability:.2f}",
         flush=True,
     )
 
@@ -181,6 +190,7 @@ def main() -> None:
             device=device,
             channels=args.channels,
             distractors=args.distractors,
+            random_question_probability=args.random_question_probability,
         )
         optimizer.zero_grad(set_to_none=True)
         with autocast_context(device, amp_enabled):
