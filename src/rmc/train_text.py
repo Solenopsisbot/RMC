@@ -8,7 +8,7 @@ import time
 import torch
 from torch import nn
 
-from .model import CoreConfig
+from .model import CoreConfig, RecurrentState
 from .text_bridge import TextBridgeConfig, load_pretrained_bridge, save_text_checkpoint
 from .text_tasks import DiscordMemoryFactory, TextMemoryBatch
 from .train import autocast_context, configure_accelerator, resolve_device, synchronize_device
@@ -31,12 +31,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reasoning-ticks", type=int, default=4)
     parser.add_argument("--prefix-tokens", type=int, default=16)
     parser.add_argument("--reset-core-before-query", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--core-reset-probability", type=float, default=0.0)
+    parser.add_argument("--evaluation-core-reset-probability", type=float)
     parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--checkpoint-every", type=int, default=100)
     parser.add_argument("--evaluate-every", type=int, default=50)
     parser.add_argument("--evaluation-batches", type=int, default=4)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/text"))
     parser.add_argument("--resume", type=Path)
+    parser.add_argument("--reset-optimizer", action="store_true")
     parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--mps-memory-fraction", type=float, default=0.0)
     return parser.parse_args()
@@ -47,12 +50,18 @@ def run_episode(
     batch: TextMemoryBatch,
     *,
     memory_enabled: bool,
-    reset_core_before_query: bool = False,
+    core_reset_probability: float = 0.0,
 ):
     state = bridge.initial_state(batch.event_ids.shape[1], device=batch.event_ids.device)
     for index in range(batch.sequence_length):
-        if reset_core_before_query and index == batch.sequence_length - 1:
-            state = bridge.core.reset_state(state, preserve_memory=True)
+        if core_reset_probability and index == batch.sequence_length - 1:
+            reset_mask = torch.rand(state.core.shape[0], device=state.core.device) < core_reset_probability
+            state = RecurrentState(
+                core=state.core.masked_fill(reset_mask.unsqueeze(-1), 0),
+                memory=state.memory,
+                usage=state.usage,
+                steps=state.steps,
+            )
         state = bridge.observe(
             batch.event_ids[index],
             batch.event_mask[index],
@@ -88,13 +97,13 @@ def evaluate(bridge, factory, args, *, device, amp_enabled) -> dict[str, float]:
                 bridge,
                 batch,
                 memory_enabled=True,
-                reset_core_before_query=args.reset_core_before_query,
+                core_reset_probability=args.evaluation_core_reset_probability,
             )
             core_only_reply = run_episode(
                 bridge,
                 batch,
                 memory_enabled=False,
-                reset_core_before_query=args.reset_core_before_query,
+                core_reset_probability=args.evaluation_core_reset_probability,
             )
             memory_accuracy += memory_reply.token_accuracy.item()
             core_only_accuracy += core_only_reply.token_accuracy.item()
@@ -110,6 +119,14 @@ def evaluate(bridge, factory, args, *, device, amp_enabled) -> dict[str, float]:
 
 def main() -> None:
     args = parse_args()
+    if args.reset_core_before_query:
+        args.core_reset_probability = 1.0
+    if not 0.0 <= args.core_reset_probability <= 1.0:
+        raise ValueError("--core-reset-probability must be between 0 and 1")
+    if args.evaluation_core_reset_probability is None:
+        args.evaluation_core_reset_probability = 1.0 if args.core_reset_probability else 0.0
+    if not 0.0 <= args.evaluation_core_reset_probability <= 1.0:
+        raise ValueError("--evaluation-core-reset-probability must be between 0 and 1")
     device = resolve_device(args.device)
     configure_accelerator(device, mps_memory_fraction=args.mps_memory_fraction)
     amp_enabled = args.amp and device.type in {"cuda", "mps"}
@@ -137,7 +154,8 @@ def main() -> None:
                 f"resume checkpoint uses {checkpoint['model_name']!r}, not requested model {args.model!r}"
             )
         bridge.load_adapter_state_dict(checkpoint["adapter"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
+        if not args.reset_optimizer:
+            optimizer.load_state_dict(checkpoint["optimizer"])
         start_step = checkpoint["step"] + 1
     factory = DiscordMemoryFactory(
         tokenizer,
@@ -150,7 +168,9 @@ def main() -> None:
     metrics_path = args.output_dir / "metrics.jsonl"
     trainable_parameters = sum(parameter.numel() for parameter in bridge.trainable_parameters())
     print(
-        f"device={device} frozen_lm={args.model!r} trainable_params={trainable_parameters:,} amp={amp_enabled}",
+        f"device={device} frozen_lm={args.model!r} trainable_params={trainable_parameters:,} "
+        f"amp={amp_enabled} core_reset_probability={args.core_reset_probability:.2f} "
+        f"evaluation_core_reset_probability={args.evaluation_core_reset_probability:.2f}",
         flush=True,
     )
 
@@ -168,7 +188,7 @@ def main() -> None:
                 bridge,
                 batch,
                 memory_enabled=True,
-                reset_core_before_query=args.reset_core_before_query,
+                core_reset_probability=args.core_reset_probability,
             )
         scaler.scale(reply.loss).backward()
         scaler.unscale_(optimizer)

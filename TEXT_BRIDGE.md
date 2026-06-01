@@ -50,6 +50,13 @@ provides a direct test that the learned memory slots, rather than only the
 short-term controller state, support recall. Logs report both token accuracy and
 whole-answer accuracy.
 
+For a gentler curriculum transition, use `--core-reset-probability 0.25` and
+raise the value over successive runs. Any nonzero training probability defaults
+evaluation to a full reset. Override that with
+`--evaluation-core-reset-probability` when measuring another regime. Use
+`--reset-optimizer` when carrying adapter weights into a substantially changed
+curriculum without inheriting Adam moments from the earlier task.
+
 ## Interactive Chat
 
 ```bash
