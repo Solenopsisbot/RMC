@@ -154,10 +154,11 @@ def test_adapter_checkpoint_excludes_frozen_language_model(tmp_path: Path) -> No
     bridge = make_bridge()
     checkpoint = tmp_path / "adapter.pt"
 
-    save_text_checkpoint(checkpoint, bridge=bridge, model_name="tiny")
+    save_text_checkpoint(checkpoint, bridge=bridge, model_name="tiny", best_answer_accuracy=0.75)
     payload = torch.load(checkpoint, weights_only=True)
 
     assert payload["model_name"] == "tiny"
+    assert payload["best_answer_accuracy"] == 0.75
     assert payload["adapter"]
     assert not any(name.startswith("language_model.") for name in payload["adapter"])
 

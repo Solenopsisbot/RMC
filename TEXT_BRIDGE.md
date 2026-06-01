@@ -66,7 +66,8 @@ stage.
 Evaluation logs include whole-answer accuracy for each question channel and
 write the strongest evaluated adapter to `best.pt`. This makes channel-zero
 shortcuts visible and preserves a useful handoff checkpoint when later updates
-become unstable.
+become unstable. New checkpoints carry the best evaluated score forward when a
+run is resumed into the same output directory.
 
 ## Interactive Chat
 

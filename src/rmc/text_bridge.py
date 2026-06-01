@@ -303,6 +303,7 @@ def save_text_checkpoint(
     model_name: str,
     optimizer: torch.optim.Optimizer | None = None,
     step: int = 0,
+    best_answer_accuracy: float | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(f"{path.suffix}.tmp")
@@ -313,6 +314,8 @@ def save_text_checkpoint(
         "bridge_config": asdict(bridge.config),
         "adapter": bridge.adapter_state_dict(),
     }
+    if best_answer_accuracy is not None:
+        payload["best_answer_accuracy"] = best_answer_accuracy
     if optimizer is not None:
         payload["optimizer"] = optimizer.state_dict()
     torch.save(payload, temporary)

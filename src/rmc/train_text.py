@@ -173,6 +173,7 @@ def main() -> None:
     )
     optimizer = torch.optim.AdamW(bridge.trainable_parameters(), lr=args.learning_rate)
     start_step = 1
+    best_answer_accuracy = -1.0
     if args.resume:
         checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
         if checkpoint["model_name"] != args.model:
@@ -183,6 +184,7 @@ def main() -> None:
         if not args.reset_optimizer:
             optimizer.load_state_dict(checkpoint["optimizer"])
         start_step = checkpoint["step"] + 1
+        best_answer_accuracy = checkpoint.get("best_answer_accuracy", -1.0)
     factory = DiscordMemoryFactory(
         tokenizer,
         max_event_tokens=bridge.config.max_event_tokens,
@@ -192,7 +194,6 @@ def main() -> None:
     scaler = torch.amp.GradScaler(device.type, enabled=amp_enabled)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = args.output_dir / "metrics.jsonl"
-    best_answer_accuracy = -1.0
     trainable_parameters = sum(parameter.numel() for parameter in bridge.trainable_parameters())
     print(
         f"device={device} frozen_lm={args.model!r} trainable_params={trainable_parameters:,} "
@@ -254,6 +255,7 @@ def main() -> None:
                 model_name=args.model,
                 optimizer=optimizer,
                 step=step,
+                best_answer_accuracy=best_answer_accuracy,
             )
         if step % args.evaluate_every == 0:
             metrics = evaluate(
@@ -283,6 +285,7 @@ def main() -> None:
                     model_name=args.model,
                     optimizer=optimizer,
                     step=step,
+                    best_answer_accuracy=best_answer_accuracy,
                 )
                 print(
                     f"new_best step={step:05d} answer_acc={best_answer_accuracy:.3f}",
