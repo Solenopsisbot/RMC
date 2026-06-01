@@ -37,6 +37,7 @@ class TextMemoryBatch:
     answer_ids: Tensor
     answer_mask: Tensor
     answers: tuple[str, ...]
+    question_channels: tuple[int, ...]
 
     @property
     def sequence_length(self) -> int:
@@ -112,6 +113,7 @@ class DiscordMemoryFactory:
         channel_rows: list[list[int]] = [[] for _ in event_rows]
         answers: list[str] = []
         questions: list[str] = []
+        question_channels: list[int] = []
 
         for batch_index in range(batch_size):
             secrets = self.random.sample(DEFAULT_SECRETS, channels)
@@ -126,11 +128,13 @@ class DiscordMemoryFactory:
                     "I was thinking about music and the weather."
                 )
                 channel_rows[channels + offset].append(channels + offset)
+            question_channel = self.random.randrange(channels)
             question = "What is my private codename? Reply with only the codename."
-            event_rows[-1].append(f"[discord channel 0] user: {question}")
-            channel_rows[-1].append(0)
+            event_rows[-1].append(f"[discord channel {question_channel}] user: {question}")
+            channel_rows[-1].append(question_channel)
             questions.append(question)
-            answers.append(secrets[0])
+            answers.append(secrets[question_channel])
+            question_channels.append(question_channel)
 
         event_ids = []
         event_mask = []
@@ -174,4 +178,5 @@ class DiscordMemoryFactory:
             answer_ids=answer_ids,
             answer_mask=answer_mask,
             answers=tuple(answers),
+            question_channels=tuple(question_channels),
         )

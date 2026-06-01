@@ -43,8 +43,12 @@ bash scripts/train_text_3090.sh \
 
 The first curriculum is intentionally narrow: Discord-like channels reveal
 private codenames, unrelated messages intervene, and the model must answer a
-later question from persistent RMC state. This isolates memory learning before
-we add natural conversation datasets.
+later question from persistent RMC state. The question channel is sampled
+randomly. Add `--reset-core-before-query` to clear transient recurrent state
+immediately before the question while retaining the external memory bank. This
+provides a direct test that the learned memory slots, rather than only the
+short-term controller state, support recall. Logs report both token accuracy and
+whole-answer accuracy.
 
 ## Interactive Chat
 

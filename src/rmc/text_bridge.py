@@ -27,6 +27,7 @@ class TextBridgeConfig:
 class ReplyLoss:
     loss: Tensor
     token_accuracy: Tensor
+    answer_accuracy: Tensor
 
 
 class RecurrentTextBridge(nn.Module):
@@ -185,7 +186,12 @@ class RecurrentTextBridge(nn.Module):
         scored = shifted_labels != -100
         correct = (shifted_logits.argmax(dim=-1) == shifted_labels) & scored
         token_accuracy = correct.sum() / scored.sum().clamp_min(1)
-        return ReplyLoss(loss=outputs.loss, token_accuracy=token_accuracy)
+        answer_accuracy = (correct | ~scored).all(dim=1).float().mean()
+        return ReplyLoss(
+            loss=outputs.loss,
+            token_accuracy=token_accuracy,
+            answer_accuracy=answer_accuracy,
+        )
 
     @torch.inference_mode()
     def generate(

@@ -119,6 +119,7 @@ def test_text_bridge_observes_messages_and_backpropagates_reply_loss() -> None:
 
     assert state.steps.tolist() == [1, 1]
     assert 0 <= reply.token_accuracy.item() <= 1
+    assert 0 <= reply.answer_accuracy.item() <= 1
     assert bridge.event_projection[1].weight.grad is not None
     assert bridge.prefix_projection[1].weight.grad is not None
     assert all(parameter.grad is None for parameter in bridge.language_model.parameters())
@@ -171,5 +172,7 @@ def test_discord_memory_factory_builds_cross_channel_recall_episode() -> None:
 
     assert batch.sequence_length == 6
     assert batch.event_ids.shape == (6, 3, 12)
-    assert batch.event_channel[:, 0].tolist() == [0, 1, 2, 3, 4, 0]
+    assert batch.event_channel[:-1, 0].tolist() == [0, 1, 2, 3, 4]
+    assert batch.event_channel[-1, 0].item() == batch.question_channels[0]
+    assert all(0 <= channel < 3 for channel in batch.question_channels)
     assert len(batch.answers) == 3

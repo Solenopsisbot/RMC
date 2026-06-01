@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--memory-size", type=int, default=256)
     parser.add_argument("--reasoning-ticks", type=int, default=4)
     parser.add_argument("--prefix-tokens", type=int, default=16)
+    parser.add_argument("--reset-core-before-query", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--checkpoint-every", type=int, default=100)
     parser.add_argument("--evaluate-every", type=int, default=50)
@@ -41,9 +42,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_episode(bridge, batch: TextMemoryBatch, *, memory_enabled: bool):
+def run_episode(
+    bridge,
+    batch: TextMemoryBatch,
+    *,
+    memory_enabled: bool,
+    reset_core_before_query: bool = False,
+):
     state = bridge.initial_state(batch.event_ids.shape[1], device=batch.event_ids.device)
     for index in range(batch.sequence_length):
+        if reset_core_before_query and index == batch.sequence_length - 1:
+            state = bridge.core.reset_state(state, preserve_memory=True)
         state = bridge.observe(
             batch.event_ids[index],
             batch.event_mask[index],
@@ -65,6 +74,8 @@ def run_episode(bridge, batch: TextMemoryBatch, *, memory_enabled: bool):
 def evaluate(bridge, factory, args, *, device, amp_enabled) -> dict[str, float]:
     memory_accuracy = 0.0
     core_only_accuracy = 0.0
+    memory_answer_accuracy = 0.0
+    core_only_answer_accuracy = 0.0
     for _ in range(args.evaluation_batches):
         batch = factory.sample(
             batch_size=args.batch_size,
@@ -73,11 +84,27 @@ def evaluate(bridge, factory, args, *, device, amp_enabled) -> dict[str, float]:
             distractors=args.distractors,
         )
         with autocast_context(device, amp_enabled):
-            memory_accuracy += run_episode(bridge, batch, memory_enabled=True).token_accuracy.item()
-            core_only_accuracy += run_episode(bridge, batch, memory_enabled=False).token_accuracy.item()
+            memory_reply = run_episode(
+                bridge,
+                batch,
+                memory_enabled=True,
+                reset_core_before_query=args.reset_core_before_query,
+            )
+            core_only_reply = run_episode(
+                bridge,
+                batch,
+                memory_enabled=False,
+                reset_core_before_query=args.reset_core_before_query,
+            )
+            memory_accuracy += memory_reply.token_accuracy.item()
+            core_only_accuracy += core_only_reply.token_accuracy.item()
+            memory_answer_accuracy += memory_reply.answer_accuracy.item()
+            core_only_answer_accuracy += core_only_reply.answer_accuracy.item()
     return {
         "eval_token_accuracy": memory_accuracy / args.evaluation_batches,
         "core_only_token_accuracy": core_only_accuracy / args.evaluation_batches,
+        "eval_answer_accuracy": memory_answer_accuracy / args.evaluation_batches,
+        "core_only_answer_accuracy": core_only_answer_accuracy / args.evaluation_batches,
     }
 
 
@@ -137,7 +164,12 @@ def main() -> None:
         )
         optimizer.zero_grad(set_to_none=True)
         with autocast_context(device, amp_enabled):
-            reply = run_episode(bridge, batch, memory_enabled=True)
+            reply = run_episode(
+                bridge,
+                batch,
+                memory_enabled=True,
+                reset_core_before_query=args.reset_core_before_query,
+            )
         scaler.scale(reply.loss).backward()
         scaler.unscale_(optimizer)
         nn.utils.clip_grad_norm_(bridge.trainable_parameters(), 1.0)
@@ -152,6 +184,7 @@ def main() -> None:
                 "step": step,
                 "loss": reply.loss.detach().item(),
                 "token_accuracy": reply.token_accuracy.detach().item(),
+                "answer_accuracy": reply.answer_accuracy.detach().item(),
                 "updates_per_second": interval / max(now - log_time, 1e-9),
             }
             log_time = now
@@ -159,7 +192,9 @@ def main() -> None:
                 handle.write(json.dumps(metrics, sort_keys=True) + "\n")
             print(
                 f"step={step:05d} loss={metrics['loss']:.4f} "
-                f"token_acc={metrics['token_accuracy']:.3f} updates_s={metrics['updates_per_second']:.2f}",
+                f"token_acc={metrics['token_accuracy']:.3f} "
+                f"answer_acc={metrics['answer_accuracy']:.3f} "
+                f"updates_s={metrics['updates_per_second']:.2f}",
                 flush=True,
             )
         if step % args.checkpoint_every == 0 or step == args.steps:
@@ -183,7 +218,9 @@ def main() -> None:
                 handle.write(json.dumps(metrics, sort_keys=True) + "\n")
             print(
                 f"evaluation step={step:05d} token_acc={metrics['eval_token_accuracy']:.3f} "
-                f"core_only_token_acc={metrics['core_only_token_accuracy']:.3f}",
+                f"answer_acc={metrics['eval_answer_accuracy']:.3f} "
+                f"core_only_token_acc={metrics['core_only_token_accuracy']:.3f} "
+                f"core_only_answer_acc={metrics['core_only_answer_accuracy']:.3f}",
                 flush=True,
             )
 
